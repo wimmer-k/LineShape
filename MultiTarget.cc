@@ -14,7 +14,15 @@
 
 TRandom3 *myrandom;
 #ifndef PI
-#define PI                       (TMath::Pi())
+#define PI (TMath::Pi())
+#endif
+
+#ifndef NMAX
+#define NMAX 5
+#endif
+
+#ifndef STEP
+#define STEP 0.01
 #endif
 
 #ifndef SPEEDOFLIGHT
@@ -58,6 +66,7 @@ int main(int argc, char* argv[]){
   myrandom = new TRandom3();
   myrandom->ReadRandom("random.dat");
 
+  int reactionT;
   double reactionZ;
   double reactionB;
 
@@ -77,6 +86,7 @@ int main(int argc, char* argv[]){
   TFile *file = new TFile(OutFile, "RECREATE");
 
   TTree* tr = new TTree("tr","Simulated Gammas");
+  tr->Branch("reactionT",&reactionT,32000,0);
   tr->Branch("reactionZ",&reactionZ,32000,0);
   tr->Branch("reactionB",&reactionB,32000,0);
 
@@ -95,13 +105,7 @@ int main(int argc, char* argv[]){
   //tr->BranchRef();
   
   TEnv *set = new TEnv(SetFile);
-  double targetz = set->GetValue("TargetPosition",0.0);
-  double targetthick = set->GetValue("TargetThickness",703.0);
-  double targetdensity = set->GetValue("TargetDensity",1.85);
-  targetdensity*=100; //to convert to mg/cm^2/mm
   double betabeam = set->GetValue("BetaBeam",0.6);
-  char* targetprojrange = (char*)set->GetValue("TargetProjRange",(char*)"/home/wimmer/simulation/lineshape/range70Kr.dat");
-  char* targetejecrange = (char*)set->GetValue("TargetEjecRange",(char*)"/home/wimmer/simulation/lineshape/range70Kr.dat");
   double egamma0 = set->GetValue("EGamma",1000.);
   double massprojinu = set->GetValue("MassProj",69.956040);
   double massejecinu = set->GetValue("MassEjec",69.956040);
@@ -112,30 +116,82 @@ int main(int argc, char* argv[]){
   double resolutionE = set->GetValue("ResolutionE",0.01/2.355); 
   double rsphere = set->GetValue("RadiusSphere",150.);
   double resolutionP = set->GetValue("ResolutionP",2./2.355); 
+
+
+  int ntargets = set->GetValue("NTargets",1);
+  double targetz[NMAX];
+  double targetthick[NMAX];
+  double targetdensity[NMAX];
+  char* targetprojrange[NMAX];
+  char* targetejecrange[NMAX];
+  Range *rangeprojtarget[NMAX];
+  Range *rangeejectarget[NMAX];
+  for(int t=0;t<ntargets;t++){
+    targetz[t] = set->GetValue(Form("Target.%d.Position",t),0.0);
+    targetthick[t] = set->GetValue(Form("Target.%d.Thickness",t),703.0);
+    targetdensity[t] = set->GetValue(Form("Target.%d.Density",t),1.85);
+    targetdensity[t]*=100; //to convert to mg/cm^2/mm
+    targetprojrange[t] = (char*)set->GetValue(Form("Target.%d.ProjRange",t),(char*)"/home/wimmer/simulation/lineshape/range70Kr.dat");
+    targetejecrange[t] = (char*)set->GetValue(Form("Target.%d.EjecRange",t),(char*)"/home/wimmer/simulation/lineshape/range70Kr.dat");
+    rangeprojtarget[t] = new Range(massprojinu,targetprojrange[t]);
+    rangeejectarget[t] = new Range(massejecinu,targetejecrange[t]);
+  }
   
-  int plunger = set->GetValue("Plunger",0);
-  double degraderthick = set->GetValue("DegraderThickness",200.0);
-  double degraderdensity = set->GetValue("DegraderDensity",16.601);
-  degraderdensity*=100; //to convert to mg/cm^2/mm
-  char* degraderrange = (char*)set->GetValue("DegraderRange",(char*)"/home/wimmer/simulation/lineshape/70KronTa.dat");
-  double degraderdistance = set->GetValue("DegraderDistance",2.0);
-  if(plunger==1)
-    targetz =0;
+  
     
   TList* hlist = new TList();
   TH1F* egamdc = new TH1F("egamdc","egamdc",8000,0,8000);hlist->Add(egamdc);
   TH1F* egamdc_4pi = new TH1F("egamdc_4pi","egamdc_4pi",8000,0,8000);hlist->Add(egamdc_4pi);
   TH1F* egamdc_1pi = new TH1F("egamdc_1pi","egamdc_1pi",8000,0,8000);hlist->Add(egamdc_1pi);
   TH2F* egamdc_theta = new TH2F("egamdc_theta","egamdc_theta",180,0,180,8000,0,8000);hlist->Add(egamdc_theta);
-
-  Range *rangeprojtarget = new Range(massprojinu,targetprojrange);
-  Range *rangeejectarget = new Range(massejecinu,targetejecrange);
-  Range *rangedegrader = new Range(massejecinu,degraderrange);
+  // bool reacted = false;
+  double beta;
+  double time;
   cout << "simulating "<< NEvent << " events "<< endl;
   for(int i=0;i<NEvent;i++){
     if(signal_received){
       break;
     }
+    beta = betabeam;
+    time = 0;
+    // reacted = false;
+    // double zposition = 0;
+
+    reactionT = myrandom->Uniform(0,ntargets);
+    cout <<"reaction in target " << reactionT << endl;
+    for(int t=0;t<ntargets;t++){
+      if(t==reactionT){
+	//find the reaction point (within this target)
+	reactionZ = targetthick[t]*myrandom->Uniform(0,1);
+	//beta at reaction
+	reactionB = rangeprojtarget[t]->GetBetaAfter(beta,reactionZ);
+	beta = reactionB;
+	reactionZ/=targetdensity[t];
+	reactionZ+=targetz[t];
+	//time of gamma emission
+	if(lifetime>0)
+	  emissionT = myrandom->Exp(lifetime);
+	else
+	  emissionT = 0;
+	// reacted = true;
+	// zposition = reactionZ;
+	break;
+      }
+      else{
+	beta = rangeprojtarget[t]->GetBetaAfter(beta,targetthick[t]);
+      }
+    }
+    double togo = targetthick[reactionT]*targetdensity[reactionT]-(reactionZ-targetz[reactionT]);
+    cout << "reactionB = " << reactionB << ", reactionZ = " << reactionZ << ", emissionT = " << emissionT << ", targetz["<<reactionT<<"] = " << targetz[reactionT] <<"', togo = " << togo << endl;
+    //propagate through the target:
+    for(double z=STEP; z<togo;z+=STEP){
+      cout << z <<"\t" << beta;
+      beta = rangeejectarget[reactionT]->GetBetaAfter(beta,STEP*targetdensity[reactionT]);
+      time += z/beta/SPEEDOFLIGHT;
+      cout <<"\t" << beta << "\t" << time << endl;
+    }
+    
+    /*
     //find the reaction point
     reactionZ = targetthick*myrandom->Uniform(0,1);
     //beta at reaction
@@ -155,16 +211,6 @@ int main(int argc, char* argv[]){
     if(emissionZ>targetthick/targetdensity+targetz){
       //after target
       emissionB = rangeejectarget->GetBetaAfter(reactionB,targetthick);
-      if(plunger==1){
-	//after distance
-	if(emissionZ > (targetthick/targetdensity+degraderdistance)){
-	  //in degrader
-	  if(emissionZ - (targetthick/targetdensity+degraderdistance) <degraderthick/degraderdensity)
-	    emissionB = rangedegrader->GetBetaAfter(emissionB,(emissionZ - (targetthick/targetdensity+degraderdistance))*degraderdensity);
-	  else
-	    emissionB = rangedegrader->GetBetaAfter(emissionB,degraderthick);
-	}
-      }
     }
     else
       emissionB = rangeejectarget->GetBetaAfter(reactionB,emissionZ*targetdensity);
@@ -207,14 +253,14 @@ int main(int argc, char* argv[]){
       egamdc_4pi->Fill(correctionE);
     if(detectionD->Theta()>0.69 && detectionD->Theta() <1.97)
       egamdc_1pi->Fill(correctionE);
-
+    */
     tr->Fill();
-    if(i%10000 == 0){
-      double time_end = get_time();
-      cout << setw(5) << setiosflags(ios::fixed) << setprecision(1) << (100.*i)/NEvent <<
-	" % done\t" << (Float_t)i/(time_end - time_start) << " events/s " << 
-	(NEvent-i)*(time_end - time_start)/(Float_t)i << "s to go \r" << flush;
-    }
+    // if(i%10000 == 0){
+    //   double time_end = get_time();
+    //   cout << setw(5) << setiosflags(ios::fixed) << setprecision(1) << (100.*i)/NEvent <<
+    // 	" % done\t" << (Float_t)i/(time_end - time_start) << " events/s " << 
+    // 	(NEvent-i)*(time_end - time_start)/(Float_t)i << "s to go \r" << flush;
+    // }
   }
   
   myrandom->WriteRandom("random.dat");

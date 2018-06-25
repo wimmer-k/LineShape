@@ -27,9 +27,13 @@ DFLAGS += -Wl,--no-as-needed
 
 O_FILES = Range.o
 
-all: LineShape
+all: LineShape MultiTarget
 
 LineShape: LineShape.cc $(O_FILES)
+	@echo "Compiling $@"
+	@$(CPP) $(CFLAGS) $(INCLUDES) $< $(LIBS) $(O_FILES) -o $(BIN_DIR)/$@ 
+
+MultiTarget: MultiTarget.cc $(O_FILES)
 	@echo "Compiling $@"
 	@$(CPP) $(CFLAGS) $(INCLUDES) $< $(LIBS) $(O_FILES) -o $(BIN_DIR)/$@ 
 

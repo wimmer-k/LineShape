@@ -27,14 +27,17 @@ void Range::CreateSplines(char *filename){
   
   ifstream data;
   data.open(filename);
-  double e[30];
-  double r[2][30];
-  
-  for(int i=0;i<30;i++){
+  double e[600];
+  double r[2][600];
+  int n =0;
+  data >> n;
+  data.ignore(1000,'\n');
+  for(int i=0;i<n;i++){
     data >> e[i] >> r[0][i] >> r[1][i];
+    data.ignore(1000,'\n');
   }
-  fE2range = new TSpline3("E2range",e,r[1],30);
-  frange2E = new TSpline3("range2E",r[1],e,30);
+  fE2range = new TSpline3("E2range",e,r[0],n);
+  frange2E = new TSpline3("range2E",r[0],e,n);
 }
 
 double Range::beta2gamma(double beta){
